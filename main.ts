@@ -173,14 +173,20 @@ for (let y = 0; y < H; y++) {
 // from root (gold) to tip (magenta / cyan) and the whole ribbon glows.
 function ribbon(p0, p1, p2, w0, hueA, hueB, strength) {
   const steps = 340;
+  const phase = p0[0] * 0.37 + p0[1] * 0.53;
   for (let s = 0; s <= steps; s++) {
     const t = s / steps;
     const mt = 1 - t;
-    const x = mt * mt * p0[0] + 2 * mt * t * p1[0] + t * t * p2[0];
-    const y = mt * mt * p0[1] + 2 * mt * t * p1[1] + t * t * p2[1];
+    // flame sway: the path undulates more towards the tip, like real fire
+    const swayX = Math.sin(t * 5.2 + phase) * 15 * t;
+    const swayY = Math.cos(t * 4.1 + phase * 1.7) * 11 * t;
+    const x = mt * mt * p0[0] + 2 * mt * t * p1[0] + t * t * p2[0] + swayX;
+    const y = mt * mt * p0[1] + 2 * mt * t * p1[1] + t * t * p2[1] + swayY;
     const wdt = w0 * (1 - t * 0.82) * (0.75 + 0.25 * Math.sin(t * 21 + p0[0]));
     const col = mix3(hueA, hueB, t);
     const fade = Math.pow(1 - t, 0.65) * strength;
+    // under-glow: a wide, dim halo pass so the ribbon sits in lit air
+    splat(x, y, Math.max(2.5, wdt * 2.3), col[0], col[1], col[2], fade * 0.05);
     splat(x, y, Math.max(1.4, wdt), col[0], col[1], col[2], fade * 0.16);
   }
 }
@@ -200,6 +206,23 @@ function wing(side) { // side: -1 left, +1 right
   for (const [tx, ty, cx, cy, w, s, hue] of tips) {
     ribbon(
       [CX + side * 16, CY + 20],
+      [CX + side * cx, CY + cy],
+      [CX + side * tx, CY + ty],
+      w, GOLD, hue, s
+    );
+  }
+  // Secondary feathers: thinner, dimmer ribbons interleaved between the
+  // primaries so the wing reads as layered plumage, not single streamers.
+  const tips2 = [
+    [502, -268, 330, -268, 13, 0.55, VIOLET],
+    [515, -158, 378, -182, 15, 0.6, CYAN],
+    [496, -48, 388, -72, 16, 0.62, MAGENTA],
+    [452, 62, 352, 34, 13, 0.55, MAGENTA],
+    [382, 164, 282, 128, 10, 0.5, CYAN],
+  ];
+  for (const [tx, ty, cx, cy, w, s, hue] of tips2) {
+    ribbon(
+      [CX + side * 10, CY + 26],
       [CX + side * cx, CY + cy],
       [CX + side * tx, CY + ty],
       w, GOLD, hue, s
@@ -233,7 +256,7 @@ comet(60, 830, 400, 660, -60, CYAN, VIOLET);
 comet(950, 870, 640, 690, -80, [1, 0.75, 0.3], MAGENTA);
 
 // 6) Ember sparks drifting up from the core.
-for (let i = 0; i < 420; i++) {
+for (let i = 0; i < 540; i++) {
   const ang = rand() * Math.PI * 2;
   const dist = 40 + Math.pow(rand(), 1.6) * 380;
   const x = CX + Math.cos(ang) * dist * 1.15;
@@ -243,6 +266,21 @@ for (let i = 0; i < 420; i++) {
   const s = 0.25 + rand() * 0.85;
   splat(x, y, 1.4 + rand() * 2.4, col[0] * s, col[1] * s, col[2] * s, 0.85);
 }
+// Corona embers: a denser shell of sparks hugging the portal rim,
+// thrown off the ring and drifting outward — the portal sheds fire.
+for (let i = 0; i < 300; i++) {
+  const ang = rand() * Math.PI * 2;
+  const dist = 150 + Math.pow(rand(), 1.35) * 130;
+  const x = CX + Math.cos(ang) * dist;
+  const y = CY + Math.sin(ang) * dist - rand() * 26; // slight upward drift
+  const warm = rand();
+  const col = warm < 0.55 ? GOLD : (warm < 0.85 ? [1.0, 0.45, 0.2] : MAGENTA);
+  const s = 0.3 + rand() * 0.95;
+  splat(x, y, 1.2 + rand() * 2.2, col[0] * s, col[1] * s, col[2] * s, 0.95);
+  if (rand() < 0.12) { // a few big soft cinders
+    splat(x, y, 6 + rand() * 6, col[0], col[1], col[2], 0.16);
+  }
+}
 
 // 7) Eclipse portal: a dark disc punched over the core with a blazing
 // plasma ring — a bold graphic shape the whole scene organises around.
@@ -251,23 +289,47 @@ for (let y = 0; y < H; y++) {
     const dx = x - CX, dy = y - CY;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const i = (y * W + x) * 3;
-    if (dist < 168) {
-      // disc: darken inside r=128, soft shoulder out to 168
-      const t = Math.min(1, Math.max(0, (dist - 128) / 40));
-      const dark = 0.22 + 0.78 * (t * t * (3 - 2 * t));
-      buf[i] *= dark; buf[i + 1] *= dark; buf[i + 2] *= dark * 1.05;
-    }
-    // ring: fiery annulus, thickness and heat modulated by angle + noise
+    // ring geometry first: the disc shoulder follows the wobbled rim
     const ang = Math.atan2(dy, dx);
     const wob = (fbm(Math.cos(ang) * 2.4 + 13.7, Math.sin(ang) * 2.4 + 6.1, 3) - 0.5) * 26;
     const ringR = 146 + wob;
+    if (dist < ringR + 24) {
+      // True eclipse: the interior falls to near-black so the core's ray
+      // fan no longer bleeds through as a pinwheel; only a dim backlit
+      // haze of scattered plasma light survives, hugging the rim.
+      const t = Math.min(1, Math.max(0, (dist - (ringR - 20)) / 44));
+      const dark = 0.018 + 0.982 * (t * t * (3 - 2 * t));
+      buf[i] *= dark; buf[i + 1] *= dark; buf[i + 2] *= dark;
+      if (dist < ringR) {
+        const haze = Math.exp(-(ringR - dist) / 34);
+        buf[i] += 0.17 * haze; buf[i + 1] += 0.035 * haze; buf[i + 2] += 0.11 * haze;
+        // Deep interior: settle to a smooth void gradient. Multiplying
+        // alone preserves a faint ghost of the core's ray fan; blending
+        // to a purely radial colour destroys that structure while the
+        // rim haze keeps the disc dimensional.
+        const settle = Math.min(1, Math.max(0, (ringR - 14 - dist) / 40));
+        const sw = settle * settle * (3 - 2 * settle);
+        if (sw > 0) {
+          buf[i] = buf[i] * (1 - sw) + (0.014 + 0.1 * haze) * sw;
+          buf[i + 1] = buf[i + 1] * (1 - sw) + (0.006 + 0.02 * haze) * sw;
+          buf[i + 2] = buf[i + 2] * (1 - sw) + (0.022 + 0.06 * haze) * sw;
+        }
+      }
+    }
+    // ring: fiery annulus, thickness and heat modulated by angle + noise
     const g = Math.exp(-Math.pow(dist - ringR, 2) / (2 * 13 * 13));
     const gWide = Math.exp(-Math.pow(dist - ringR, 2) / (2 * 34 * 34));
-    const heat = 0.72 + 0.5 * fbm(ang * 2.2 + 40, dist / 60, 3);
+    const heat = 0.5 + 0.9 * fbm(ang * 3.1 + 40, dist / 55, 3);
     const col = ramp([[1.0, 0.3, 0.55], [1.0, 0.62, 0.16], [1.0, 0.88, 0.42], [0.95, 0.25, 0.7]], (ang + Math.PI) / (2 * Math.PI));
     buf[i] += (col[0] * g * 1.5 + col[0] * gWide * 0.3) * heat;
     buf[i + 1] += (col[1] * g * 1.5 + col[1] * gWide * 0.3) * heat;
     buf[i + 2] += (col[2] * g * 1.5 + col[2] * gWide * 0.3) * heat;
+    // plasma filaments licking outward from the rim
+    const fil = Math.pow(Math.max(0, fbm(ang * 6.3 + 90.2, 3.3, 3) - 0.52), 2) * 3.4;
+    const filBand = Math.exp(-Math.pow(dist - (ringR + 30), 2) / (2 * 20 * 20));
+    buf[i] += col[0] * fil * filBand * 0.85;
+    buf[i + 1] += col[1] * fil * filBand * 0.85;
+    buf[i + 2] += col[2] * fil * filBand * 0.85;
     // white-hot inner edge
     const inner = Math.exp(-Math.pow(dist - (ringR - 12), 2) / (2 * 5 * 5));
     buf[i] += inner * 0.55; buf[i + 1] += inner * 0.5; buf[i + 2] += inner * 0.42;
@@ -296,8 +358,27 @@ for (let y = 0; y < H; y++) {
       const y = top + k;
       if (y >= H) break;
       const i = (y * W + x) * 3;
-      const f = (1 - k / 3) * 0.5;
+      const f = (1 - k / 3) * 0.55;
       buf[i] += 1.0 * f; buf[i + 1] += 0.42 * f; buf[i + 2] += 0.62 * f;
+    }
+  }
+  // Nearer ridge: a second, lower silhouette in front of the first,
+  // crushed almost to black with only a cool violet kiss of rim light —
+  // the parallax gap between the two skylines gives the shore depth.
+  for (let x = 0; x < W; x++) {
+    const n = fbm(x / 210 + 17.3, 4.4, 3);
+    const n2 = fbm(x / 52 + 1.9, 7.7, 2);
+    const top = Math.floor(H - 14 - n * 58 - n2 * 20);
+    for (let y = top; y < H; y++) {
+      const i = (y * W + x) * 3;
+      buf[i] *= 0.1; buf[i + 1] *= 0.1; buf[i + 2] *= 0.13;
+    }
+    for (let k = 0; k < 2; k++) {
+      const y = top + k;
+      if (y >= H) break;
+      const i = (y * W + x) * 3;
+      const f = (1 - k / 2) * 0.16;
+      buf[i] += 0.3 * f; buf[i + 1] += 0.34 * f; buf[i + 2] += 0.6 * f;
     }
   }
 }
@@ -309,11 +390,18 @@ for (let p = 0; p < W * H; p++) {
   for (let c = 0; c < 3; c++) {
     let v = buf[p * 3 + c];
     v = v / (1 + v * 0.55);              // soft shoulder
-    px[c] = Math.pow(Math.max(0, v), 0.78); // lift
+    v = Math.pow(Math.max(0, v), 0.78);  // lift
+    // gentle S-curve blended in: deepens the shadows so the nebula
+    // falls off to true space-black instead of washed violet
+    px[c] = v * (1 - 0.32) + (v * v * (3 - 2 * v)) * 0.32;
   }
+  // final vignette: pull the corners down so the portal owns the eye
+  const vx = (p % W) / W - 0.5, vy = Math.floor(p / W) / H - 0.46;
+  const vd = Math.min(1, (vx * vx + vy * vy) * 2.1);
+  const vigF = 1 - 0.3 * (vd * vd * (3 - 2 * vd));
   const luma = px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114;
   for (let c = 0; c < 3; c++) {
-    const v = luma + (px[c] - luma) * 1.32; // saturation push
+    const v = (luma + (px[c] - luma) * 1.32) * vigF; // saturation push
     img[p * 3 + c] = Math.min(255, Math.max(0, Math.round(v * 255)));
   }
 }
