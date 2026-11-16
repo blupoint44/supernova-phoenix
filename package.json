@@ -1,5 +1,1 @@
-{
-  "name": "supernova-phoenix",
-  "private": true,
-  "type": "module"
-}
+{"description":"Supernova Phoenix — a deterministic procedural 1024x1024 eclipse-portal phoenix artwork (Node standard library only) for make.fun ai-excited-01","name":"supernova-phoenix","private":true,"type":"module","version":"1.2.0"}

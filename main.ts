@@ -255,7 +255,19 @@ function comet(x0, y0, x1, y1, bend, hueA, hueB) {
 comet(60, 830, 400, 660, -60, CYAN, VIOLET);
 comet(950, 870, 640, 690, -80, [1, 0.75, 0.3], MAGENTA);
 
-// 6) Ember sparks drifting up from the core.
+// 6) Ember sparks drifting up from the core. Each spark is drawn as a
+// short streak trailing behind its direction of travel — head bright,
+// tail fading — so the field reads as moving fire, not static dust.
+// Direction: mostly upward, fanned outward from the core.
+function streak(x, y, dx, dy, len, rad, r, g, b, strength) {
+  const steps = Math.max(2, Math.round(len / 1.6));
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps; // 0 at the head, 1 at the tail
+    const fade = Math.pow(1 - t, 1.6) * strength;
+    splat(x - dx * len * t, y - dy * len * t, rad * (1 - t * 0.55),
+      r, g, b, fade * 0.55);
+  }
+}
 for (let i = 0; i < 540; i++) {
   const ang = rand() * Math.PI * 2;
   const dist = 40 + Math.pow(rand(), 1.6) * 380;
@@ -264,10 +276,16 @@ for (let i = 0; i < 540; i++) {
   const warm = rand();
   const col = warm < 0.6 ? GOLD : (warm < 0.85 ? MAGENTA : CYAN);
   const s = 0.25 + rand() * 0.85;
-  splat(x, y, 1.4 + rand() * 2.4, col[0] * s, col[1] * s, col[2] * s, 0.85);
+  // velocity: up, tilted outward along the radial direction
+  let vx = Math.cos(ang) * 0.45, vy = -1 + Math.sin(ang) * 0.3;
+  const vl = Math.hypot(vx, vy); vx /= vl; vy /= vl;
+  const len = 3 + rand() * 8 + dist * 0.012; // farther sparks fly faster
+  streak(x, y, vx, vy, len, 1.3 + rand() * 1.6,
+    col[0] * s, col[1] * s, col[2] * s, 0.95);
 }
 // Corona embers: a denser shell of sparks hugging the portal rim,
 // thrown off the ring and drifting outward — the portal sheds fire.
+// Their streaks point radially outward, like ejecta leaving the rim.
 for (let i = 0; i < 300; i++) {
   const ang = rand() * Math.PI * 2;
   const dist = 150 + Math.pow(rand(), 1.35) * 130;
@@ -276,7 +294,10 @@ for (let i = 0; i < 300; i++) {
   const warm = rand();
   const col = warm < 0.55 ? GOLD : (warm < 0.85 ? [1.0, 0.45, 0.2] : MAGENTA);
   const s = 0.3 + rand() * 0.95;
-  splat(x, y, 1.2 + rand() * 2.2, col[0] * s, col[1] * s, col[2] * s, 0.95);
+  let vx = Math.cos(ang), vy = Math.sin(ang) - 0.35; // outward, tipped up
+  const vl = Math.hypot(vx, vy); vx /= vl; vy /= vl;
+  streak(x, y, vx, vy, 3 + rand() * 7, 1.2 + rand() * 1.6,
+    col[0] * s, col[1] * s, col[2] * s, 1.0);
   if (rand() < 0.12) { // a few big soft cinders
     splat(x, y, 6 + rand() * 6, col[0], col[1], col[2], 0.16);
   }
@@ -335,6 +356,33 @@ for (let y = 0; y < H; y++) {
     buf[i] += inner * 0.55; buf[i + 1] += inner * 0.5; buf[i + 2] += inner * 0.42;
   }
 }
+
+// 7b) Prominence loops: arcs of plasma anchored on the rim at both feet,
+// bulging outward and falling back — the portal's corona made visible.
+// Each loop follows the ring's own wobble so its feet sit on the rim, and
+// takes the ring's colour ramp at its mid-angle so it belongs to the ring.
+function prominence(a0, a1, height, width, strength) {
+  const steps = 130;
+  const amid = (a0 + a1) / 2;
+  const col = ramp([[1.0, 0.3, 0.55], [1.0, 0.62, 0.16], [1.0, 0.88, 0.42], [0.95, 0.25, 0.7]], (amid + Math.PI) / (2 * Math.PI));
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const ang = a0 + (a1 - a0) * t;
+    const wob = (fbm(Math.cos(ang) * 2.4 + 13.7, Math.sin(ang) * 2.4 + 6.1, 3) - 0.5) * 26;
+    const r = 146 + wob + Math.sin(t * Math.PI) * height;
+    const x = CX + Math.cos(ang) * r, y = CY + Math.sin(ang) * r;
+    const fade = Math.pow(Math.sin(t * Math.PI), 0.4) * strength;
+    splat(x, y, width * 2.3, col[0], col[1], col[2], fade * 0.05); // halo
+    splat(x, y, width, col[0], col[1], col[2], fade * 0.2);        // body
+    splat(x, y, width * 0.45, 1.2, 1.05, 0.85, fade * 0.22);       // hot spine
+  }
+}
+prominence(-2.75, -2.05, 58, 5, 0.95);  // upper left
+prominence(-1.95, -1.12, 96, 6, 1.05);  // the great crown loop, top
+prominence(-0.95, -0.25, 64, 5, 0.95);  // upper right
+prominence(0.15, 0.8, 46, 4.5, 0.85);   // right
+prominence(2.35, 3.05, 50, 4.5, 0.85);  // lower left
+prominence(1.25, 1.8, 40, 4, 0.75);     // lower right, small
 
 // 8) Crystal ridge silhouette along the bottom, rim-lit from the core.
 {
